@@ -69,7 +69,7 @@ NSInteger const PVMaxRecentsShortcutCount = 4;
 
 @property (nonatomic, assign) BOOL initialAppearance;
 
-@property (nonatomic, assign) BOOL mustRefreshRecentGamesSection;
+@property (nonatomic, assign) BOOL mustRefreshDataSource;
 
 @end
 
@@ -218,7 +218,7 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
 		[self.collectionView deselectItemAtIndexPath:obj animated:YES];
 	}];
     
-    if (self.mustRefreshRecentGamesSection) {
+    if (self.mustRefreshDataSource) {
         [self fetchGames];
         [self.collectionView reloadData];
     }
@@ -248,12 +248,15 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
 
 - (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender
 {
-#if !TARGET_OS_TV
     if ([[segue identifier] isEqualToString:@"SettingsSegue"])
     {
+#if !TARGET_OS_TV
         [(PVSettingsViewController *)[[segue destinationViewController] topViewController] setGameImporter:self.gameImporter];
-    }
 #endif
+        
+        // Refresh table view data source when back from settings
+        self.mustRefreshDataSource = YES;
+    }
 }
 
 #pragma mark - Filesystem Helpers
@@ -538,12 +541,14 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
     [self.realm refresh];
 
     // Recent games
-    RLMResults *recents = [PVRecentGame allObjects];
     NSMutableArray *recentGames = [[NSMutableArray alloc] init];
-    for (PVRecentGame *recentGame in [recents sortedResultsUsingProperty:@"lastPlayedDate" ascending:NO]) {
-        PVGame *game = recentGame.game;
-        if (game) {
-            [recentGames addObject:game];
+    if ([[PVSettingsModel sharedInstance] showRecentGames]) {
+        RLMResults *recents = [PVRecentGame allObjects];
+        for (PVRecentGame *recentGame in [recents sortedResultsUsingProperty:@"lastPlayedDate" ascending:NO]) {
+            PVGame *game = recentGame.game;
+            if (game) {
+                [recentGames addObject:game];
+            }
         }
     }
 
@@ -574,7 +579,7 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
     self.gamesInSections = tempSections;
     self.sectionInfo = sectionInfo;
     
-    self.mustRefreshRecentGamesSection = NO;
+    self.mustRefreshDataSource = NO;
 }
 
 - (void)finishedImportingGameWithMD5:(NSString *)md5
@@ -852,7 +857,7 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
     
     [self registerRecentGames:recents];
     
-    self.mustRefreshRecentGamesSection = YES;
+    self.mustRefreshDataSource = YES;
 }
 
 - (void)registerRecentGames:(RLMResults *)recents
