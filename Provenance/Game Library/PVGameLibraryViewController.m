@@ -35,14 +35,12 @@
 #import "PVControllerManager.h"
 #import "RLMRealmConfiguration+GroupConfig.h"
 #import "PVEmulatorConstants.h"
+#import "PVAppConstants.h"
 
 NSString * const PVGameLibraryHeaderView = @"PVGameLibraryHeaderView";
 NSString * const kRefreshLibraryNotification = @"kRefreshLibraryNotification";
 
 NSString * const PVRequiresMigrationKey = @"PVRequiresMigration";
-
-NSInteger const PVMaxRecentsCount = 10;
-NSInteger const PVMaxRecentsShortcutCount = 4;
 
 @interface PVGameLibraryViewController ()
 
@@ -177,7 +175,7 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
             forSupplementaryViewOfKind:UICollectionElementKindSectionHeader
                    withReuseIdentifier:PVGameLibraryHeaderView];
 #if TARGET_OS_TV
-    [self.collectionView setContentInset:UIEdgeInsetsMake(40, 20, 40, 20)];
+    [self.collectionView setContentInset:UIEdgeInsetsMake(40, 80, 40, 80)];
 #endif
 	[[self view] addSubview:self.collectionView];
     
@@ -217,11 +215,11 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
 	[indexPaths enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
 		[self.collectionView deselectItemAtIndexPath:obj animated:YES];
 	}];
-    
-    if (self.mustRefreshDataSource) {
+
+//    if (self.mustRefreshDataSource) {
         [self fetchGames];
         [self.collectionView reloadData];
-    }
+//    }
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -633,31 +631,22 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
     }
 }
 
-- (NSIndexPath *)indexPathForGameWithMD5Hash:(NSString *)md5Hash
+- (NSArray *)indexPathsForGameWithMD5Hash:(NSString *)md5Hash
 {
-    NSIndexPath *indexPath = nil;
-    __block NSInteger section = NSNotFound;
-    __block NSInteger item = NSNotFound;
+    NSMutableArray *indexPaths = [[NSMutableArray alloc] init];
     
     [self.sectionInfo enumerateObjectsUsingBlock:^(NSString *sectionKey, NSUInteger sectionIndex, BOOL *sectionStop) {
         NSArray *games = self.gamesInSections[sectionKey];
         [games enumerateObjectsUsingBlock:^(PVGame *game, NSUInteger gameIndex, BOOL *gameStop) {
             if ([[game md5Hash] isEqualToString:md5Hash])
             {
-                section = sectionIndex;
-                item = gameIndex;
-                *gameStop = YES;
-                *sectionStop = YES;
+                NSIndexPath *indexPath = [NSIndexPath indexPathForRow:gameIndex inSection:sectionIndex];
+                [indexPaths addObject:indexPath];
             }
         }];
     }];
     
-    if ((section != NSNotFound) && (item != NSNotFound))
-    {
-        indexPath = [NSIndexPath indexPathForItem:item inSection:section];
-    }
-    
-    return indexPath;
+    return indexPaths;
 }
 
 - (NSIndexPath *)indexPathForGameWithURL:(NSString *)url
@@ -941,13 +930,13 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
             [[actionSheet popoverPresentationController] setSourceView:cell];
             [[actionSheet popoverPresentationController] setSourceRect:[[self.collectionView layoutAttributesForItemAtIndexPath:indexPath] bounds]];
         }
-#if !TARGET_OS_TV
         [actionSheet addAction:[UIAlertAction actionWithTitle:@"Rename"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(UIAlertAction * _Nonnull action) {
                                                           [weakSelf renameGame:game];
                                                       }]];
 
+#if !TARGET_OS_TV
         [actionSheet addAction:[UIAlertAction actionWithTitle:@"Choose Custom Artwork"
                                                         style:UIAlertActionStyleDefault
                                                       handler:^(UIAlertAction * _Nonnull action) {
@@ -974,9 +963,9 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
                                                               dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                                                                   [weakSelf.gameImporter getArtworkFromURL:originalArtworkURL];
                                                                   dispatch_async(dispatch_get_main_queue(), ^{
-                                                                      NSIndexPath *indexPath = [weakSelf indexPathForGameWithMD5Hash:[game md5Hash]];
+                                                                      NSArray *indexPaths = [self indexPathsForGameWithMD5Hash:[game md5Hash]];
                                                                       [weakSelf fetchGames];
-                                                                      [weakSelf.collectionView reloadItemsAtIndexPaths:@[indexPath]];
+                                                                      [weakSelf.collectionView reloadItemsAtIndexPaths:indexPaths];
                                                                   });
                                                               });
                                                           }]];
@@ -1003,9 +992,27 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
     }
 }
 
-#if !TARGET_OS_TV
 - (void)renameGame:(PVGame *)game
 {
+#if TARGET_OS_TV
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Rename"
+                                                                   message:[NSString stringWithFormat:@"Enter a new name for %@", [game title]]
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
+        textField.placeholder = [game title];
+    }];
+    
+    __weak PVGameLibraryViewController *weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        NSString *title = [[alert.textFields firstObject] text];
+        [weakSelf renameGame:game toTitle:title];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    [self presentViewController:alert animated:YES completion:NULL];
+    
+#else
     self.gameToRename = game;
     
     self.renameOverlay = [[UIView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
@@ -1048,26 +1055,17 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
                                                object:nil];
     
     [self.renameTextField becomeFirstResponder];
-}
 #endif
+}
 
 #if !TARGET_OS_TV
 - (void)doneRenaming:(id)sender
 {
     NSString *newTitle = [self.renameTextField text];
     
-    if ([newTitle length])
-    {
-        [self.realm beginWriteTransaction];
-        [self.gameToRename setTitle:newTitle];
-        [self.realm commitWriteTransaction];
-        
-        NSIndexPath *indexPath = [self indexPathForGameWithMD5Hash:[self.gameToRename md5Hash]];
-        [self fetchGames];
-        [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
-        
-        self.gameToRename = nil;
-    }
+    [self renameGame:self.gameToRename toTitle:newTitle];
+    
+    self.gameToRename = nil;
     
     [UIView animateWithDuration:0.3
                           delay:0.0
@@ -1089,10 +1087,23 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
 }
 #endif
 
+- (void)renameGame:(PVGame *)game toTitle:(NSString *)title;
+{
+    if (title.length)
+    {
+        [self.realm beginWriteTransaction];
+        [game setTitle:title];
+        [self.realm commitWriteTransaction];
+        
+        [self fetchGames];
+        [self.collectionView reloadData];
+    }
+}
+
 - (void)deleteGame:(PVGame *)game
 {
     NSString *romPath = [[self documentsPath] stringByAppendingPathComponent:[game romPath]];
-    NSIndexPath *indexPath = [self indexPathForGameWithMD5Hash:[game md5Hash]];
+    NSArray *indexPaths = [self indexPathsForGameWithMD5Hash:[game md5Hash]];
     
     [PVMediaCache deleteImageForKey:[game originalArtworkURL]];
     [PVMediaCache deleteImageForKey:[game customArtworkURL]];
@@ -1127,15 +1138,17 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
     NSDictionary *oldGamesInSections = self.gamesInSections;
     [self fetchGames];
     
-    NSString *sectionID = [oldSectionInfo objectAtIndex:[indexPath section]];
-    NSUInteger count = [oldGamesInSections[sectionID] count];
-    
     [self.collectionView performBatchUpdates:^{
-        [self.collectionView deleteItemsAtIndexPaths:@[indexPath]];
+        [self.collectionView deleteItemsAtIndexPaths:indexPaths];
         
-        if (count == 1)
+        for (NSIndexPath *indexPath in indexPaths)
         {
-            [self.collectionView deleteSections:[NSIndexSet indexSetWithIndex:[indexPath section]]];
+            NSString *sectionID = [oldSectionInfo objectAtIndex:[indexPath section]];
+            NSUInteger count = [oldGamesInSections[sectionID] count];
+            if (count == 1)
+            {
+                [self.collectionView deleteSections:[NSIndexSet indexSetWithIndex:[indexPath section]]];
+            }
         }
     } completion:^(BOOL finished) {
     }];
@@ -1225,9 +1238,9 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
                                                                                [self.realm beginWriteTransaction];
                                                                                [game setCustomArtworkURL:[[rep url] absoluteString]];
                                                                                [self.realm commitWriteTransaction];
-                                                                               NSIndexPath *indexPath = [self indexPathForGameWithMD5Hash:[game md5Hash]];
+                                                                               NSArray *indexPaths = [self indexPathsForGameWithMD5Hash:[game md5Hash]];
                                                                                [self fetchGames];
-                                                                               [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
+                                                                               [self.collectionView reloadItemsAtIndexPaths:indexPaths];
                                                                                weakSelf.assetsLibrary = nil;
                                                                            }];
                                                                            
@@ -1298,9 +1311,9 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
         [self.realm beginWriteTransaction];
         [game setCustomArtworkURL:key];
         [self.realm commitWriteTransaction];
-        NSIndexPath *indexPath = [self indexPathForGameWithMD5Hash:[game md5Hash]];
+        NSArray *indexPaths = [self indexPathsForGameWithMD5Hash:[game md5Hash]];
         [self fetchGames];
-        [self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
+        [self.collectionView reloadItemsAtIndexPaths:indexPaths];
     }
 }
 #endif
@@ -1622,8 +1635,8 @@ static NSString *_reuseIdentifier = @"PVGameLibraryCollectionViewCell";
         [self.realm beginWriteTransaction];
 		[self.gameForCustomArt setCustomArtworkURL:hash];
         [self.realm commitWriteTransaction];
-        NSIndexPath *indexPath = [self indexPathForGameWithMD5Hash:[self.gameForCustomArt md5Hash]];
-		[self.collectionView reloadItemsAtIndexPaths:@[indexPath]];
+        NSArray *indexPaths = [self indexPathsForGameWithMD5Hash:[self.gameForCustomArt md5Hash]];
+		[self.collectionView reloadItemsAtIndexPaths:indexPaths];
 	}
 	
 	self.gameForCustomArt = nil;
