@@ -10,7 +10,7 @@
 
 NSInteger const PVMaxRecentsShortcutCount = 4;
 
-NSString *const PVAppGroupId = @"";
+NSString *const PVAppGroupId = @"group.hiveandfive.Provenance";
 
 NSString *const PVGameControllerKey = @"PlayController";
 NSString *const PVGameMD5Key = @"md5";
